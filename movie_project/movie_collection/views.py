@@ -1,4 +1,6 @@
 
+from rest_framework.authentication import SessionAuthentication, BasicAuthentication
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework import status
 from rest_framework.viewsets import ModelViewSet
 from rest_framework import viewsets
@@ -12,12 +14,13 @@ from .models import Collection, Movie
 from .serializers import CollectionSerializer, MovieSerializer, UserSerializer
 from django.contrib.auth.models import User
 from rest_framework.generics import CreateAPIView
-# from rest_framework.permissions import IsAuthenticated
-# from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.http import JsonResponse
 from django.views import View
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
+from django.views.decorators.csrf import csrf_exempt
 request_counter_middleware = RequestCounterMiddleware(None)
 
 
@@ -38,10 +41,9 @@ class SignUpAPI(CreateAPIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
-
 class CollectionViewSet(viewsets.ModelViewSet):
-    # queryset = Collection.objects.all()
-    # serializer_class = CollectionSerializer
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
     queryset = Collection.objects.all()
     serializer_class = CollectionSerializer
 
@@ -49,27 +51,30 @@ class CollectionViewSet(viewsets.ModelViewSet):
 
         movies_data = request.data.pop('movies')
 
-        # Create the collection
         collection_serializer = self.get_serializer(data=request.data)
         if collection_serializer.is_valid():
             collection = collection_serializer.save()
-
-            # Create associated movies
             movie_serializer = MovieSerializer(data=movies_data, many=True)
-            if movie_serializer.is_valid():
-                for movie_data in movies_data:
-                    Movie.objects.create(collection=collection, **movie_data)
-                return Response(collection_serializer.data, status=status.HTTP_201_CREATED)
-            else:
-                collection.delete()
-                return Response(movie_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                if movie_serializer.is_valid():
+                    Movie.objects.bulk_create(
+                        [Movie(collection=collection, **movie_data) for movie_data in movies_data])
+                    return Response(collection_serializer.data, status=status.HTTP_201_CREATED)
 
-        return Response(collection_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                else:
+                    collection.delete()
+                    return Response(movie_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as e:
+                collection.delete()
+                return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response(collection_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['put'])
     def update_movies(self, request, pk=None):
         collection = self.get_object()
-        serializer = self.get_serializer(collection, data=request.data, partial=True, validate_movies=self.validate_movies)
+        serializer = self.get_serializer(
+            collection, data=request.data, partial=True, validate_movies=self.validate_movies)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({'collection_uuid': collection.uuid})
@@ -88,24 +93,10 @@ class CollectionViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
 
-    # def create(self, request, *args, **kwargs):
-    #     try:
-    #         serializer = self.get_serializer(data=request.data, partial=True)
-    #         serializer.is_valid(raise_exception=True)
-
-    #         movies = request.data.pop('movies', [])
-
-    #         collection = serializer.save()
-
-    #         for movie_data in movies:
-    #             Movie.objects.create(collection=collection, **movie_data)
-
-    #         return Response(serializer.data, status=status.HTTP_201_CREATED)
-    #     except Exception as e:
-    #         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
 
 class MovieViewSet(viewsets.ModelViewSet):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
     queryset = Movie.objects.all()
     serializer_class = MovieSerializer
     pagination_class = MoviePagination
@@ -115,42 +106,44 @@ class MovieViewSet(viewsets.ModelViewSet):
 
 
 class MoviesView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
         try:
-            movies = Movie.objects.all()
-            paginator = MoviePagination()
-            page = paginator.paginate_queryset(movies, request)
-            serializer = MovieSerializer(page, many=True)
-            return paginator.get_paginated_response(serializer.data)
+            collections = Collection.objects.all()
+            collection_data = [{"title": collection.title, "uuid": collection.uuid,
+                                "description": collection.description} for collection in collections]
+            favourite_genres = self.get_top_genres(request)
+            data = {"collections": collection_data,
+                    "favourite_genres": favourite_genres}
+            return Response({"is_success": True, "data": data})
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(methods=["GET"], detail=False)
     def get_top_genres(self, request):
         try:
-            movies = Movie.objects.filter(collection=request.user.collection)
+            movies = Movie.objects.all()
             genres = movies.values_list("genres", flat=True)
             genres = [genre for genre in genres if genre]
             genres = Counter(genres).most_common(3)
-            return Response([genre[0] for genre in genres])
+            return [genre[0] for genre in genres]
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class RequestCounterView(View):
-    # authentication_classes = [JWTAuthentication]
-    # permission_classes = [IsAuthenticated]
-
-    def get(self):
+@csrf_exempt
+@api_view(['GET', 'POST'])
+def RequestCounterView(request):
+    if request.method == 'GET':
         try:
-            return JsonResponse({'requests': request_counter_middleware.get_request_count()})
+            return Response({'requests': request_counter_middleware.get_request_count()})
         except Exception as e:
-            return JsonResponse({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-    def post(self, request):
+    elif request.method == 'POST':
         try:
             request_counter_middleware.reset_request_count()
-            return JsonResponse({'message': 'request count reset successfully'})
+            return Response({'message': 'request count reset successfully'})
         except Exception as e:
-            return JsonResponse({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)

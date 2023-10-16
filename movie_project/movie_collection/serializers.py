@@ -4,11 +4,12 @@ from django.contrib.auth.models import User
 from django.db.models.query import Prefetch
 import os
 
+
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
 
     def create(self, validated_data):
-        password = validated_data['password'].strip()  # Remove leading and trailing spaces
+        password = validated_data['password'].strip()
         user = User.objects.create_user(
             username=validated_data['username'],
             password=password,
@@ -24,19 +25,20 @@ class UserSerializer(serializers.ModelSerializer):
 CLIENT_ID = os.getenv('CLIENT_ID')
 CLIENT_SECRET = os.getenv('CLIENT_SECRET')
 
+
 class MovieSerializer(serializers.ModelSerializer):
     class Meta:
         model = Movie
         fields = ['uuid', 'title', 'description', 'genres']
 
+
 class CollectionSerializer(serializers.ModelSerializer):
-    
+
     movies = MovieSerializer(many=True, required=False)
 
     class Meta:
         model = Collection
-        fields = ['uuid','title', 'description', 'movies']
-        # read_only_fields = ['id']
+        fields = ['uuid', 'title', 'description', 'movies']
 
     def create(self, validated_data):
         movies_data = validated_data.pop('movies', [])
@@ -51,8 +53,8 @@ class RequestSerializer(serializers.ModelSerializer):
         model = Request
         fields = "__all__"
 
+
 class RequestCountSerializer(serializers.ModelSerializer):
     class Meta:
         model = RequestCount
         fields = "__all__"
-        

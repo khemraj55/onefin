@@ -8,8 +8,9 @@ from django.contrib.auth.models import User
 from .models import *
 import uuid
 
+
 class TestViews(APITestCase):
-    
+
     def setUp(self):
         self.collection = CollectionFactory()
 
@@ -24,7 +25,6 @@ class TestViews(APITestCase):
         for field in expected_fields:
             self.assertIn(field, response.data)
 
-    
     def test_create_collection(self):
         movie = MovieFactory()
         data = {'title': 'Test Collection', 'movies': [
@@ -35,21 +35,16 @@ class TestViews(APITestCase):
         expected_fields = ['title', 'description', 'movies']
         for field in expected_fields:
             self.assertIn(field, response.data)
-            
-    def test_collection_detail(self):
-        """Test collection detail view"""
 
-        # Access the collection detail view
+    def test_collection_detail(self):
+
         url = f'/api/collections/{self.collection.uuid}/'
         response = self.client.get(url)
-
-        # Assert that the response status code is 200 OK
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-        # Assert that the response data contains the expected fields
         expected_fields = ['title', 'description', 'movies']
         for field in expected_fields:
             self.assertIn(field, response.data)
+
 
 class TestMovies(APITestCase):
     def setUp(self):
