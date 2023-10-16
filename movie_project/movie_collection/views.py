@@ -9,13 +9,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from collections import Counter
 from rest_framework.decorators import action
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from .middleware import RequestCounterMiddleware
 from .models import Collection, Movie
 from .serializers import CollectionSerializer, MovieSerializer, UserSerializer
 from django.contrib.auth.models import User
 from rest_framework.generics import CreateAPIView
 from rest_framework.permissions import IsAuthenticated
-from rest_framework_simplejwt.authentication import JWTAuthentication
+
 from django.http import JsonResponse
 from django.views import View
 from rest_framework.pagination import PageNumberPagination
